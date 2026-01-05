@@ -11,7 +11,7 @@ interface StoreContextType {
   removeFromCart: (id: string, size: string, color: string) => void;
   toggleWishlist: (product: Product) => void;
   homepageConfig: SectionConfig[];
-  updateHomepageConfig: (config: SectionConfig[]) => Promise<void>;
+  updateHomepageConfig: (config: SectionConfig[]) => Promise<boolean>;
   user: UserProfile | null;
   isLoading: boolean;
   error: string | null;
@@ -62,13 +62,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         })));
       }
       
-      if (configData) {
+      if (configData && configData.length > 0) {
         setHomepageConfig(configData.map(c => ({
           ...c,
           imageUrl: c.image_url,
           buttonText: c.button_text,
           order: c.display_order
         })));
+      } else {
+        setHomepageConfig([]);
       }
     } catch (err: any) {
       console.error('Atelier Connection Error:', err);
@@ -109,8 +111,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
   };
 
-  const updateHomepageConfig = async (config: SectionConfig[]) => {
-    setHomepageConfig(config);
+  const updateHomepageConfig = async (config: SectionConfig[]): Promise<boolean> => {
     const updates = config.map(c => ({
       id: c.id,
       type: c.type,
@@ -119,14 +120,20 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       image_url: c.imageUrl,
       button_text: c.buttonText,
       is_visible: c.isVisible,
-      display_order: c.order,
-      updated_at: new Date()
+      display_order: c.order
     }));
 
-    const { error } = await supabase.from('homepage_config').upsert(updates);
-    if (error) {
-      alert('Cloud Sync Failed: ' + error.message);
-      fetchData();
+    try {
+      const { error } = await supabase.from('homepage_config').upsert(updates);
+      if (error) throw error;
+      
+      setHomepageConfig(config);
+      return true;
+    } catch (err: any) {
+      console.error('Save Error:', err);
+      alert('Cloud Sync Failed: ' + (err.message || 'Check your Supabase RLS policies.'));
+      await fetchData(); // Rollback local state to what's in DB
+      return false;
     }
   };
 

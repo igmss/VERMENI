@@ -3,7 +3,7 @@ import React, { useState, useRef } from 'react';
 import { Layout } from '../components/Layout';
 import { useStore } from '../store/StoreContext';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Eye, EyeOff, MoveUp, MoveDown, Save, Plus, Trash2, Layout as LayoutIcon, Settings, Image as ImageIcon, Type, BarChart3, Package, Lock, ArrowRight, Database, Sparkles, Upload, X, Loader2, Palette, Ruler, Terminal } from 'lucide-react';
+import { Eye, EyeOff, MoveUp, MoveDown, Save, Plus, Trash2, Layout as LayoutIcon, Settings, Image as ImageIcon, Type, BarChart3, Package, Lock, ArrowRight, Database, Sparkles, Upload, X, Loader2, Palette, Ruler, Terminal, Zap, CheckCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Product, Category } from '../types';
 
@@ -15,7 +15,7 @@ const Admin = () => {
   const [activeModule, setActiveModule] = useState<'layout' | 'products' | 'sql'>('layout');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
   const [isInitializing, setIsInitializing] = useState(false);
   const [isUploadingGlobal, setIsUploadingGlobal] = useState(false);
   
@@ -46,18 +46,25 @@ const Admin = () => {
     e.preventDefault();
     if (password === 'vermeni2025') {
       setIsAuthenticated(true);
-      setError('');
     } else {
-      setError('Invalid atelier credentials.');
+      alert('Invalid atelier credentials.');
     }
+  };
+
+  const handlePublish = async () => {
+    setIsSaving(true);
+    const success = await updateHomepageConfig(localConfig);
+    if (success) {
+      alert('Atelier layout updated in cloud.');
+    }
+    setIsSaving(false);
   };
 
   const uploadToStorage = async (file: File) => {
     const fileExt = file.name.split('.').pop();
-    const fileName = `${Math.random()}.${fileExt}`;
+    const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
     const filePath = `atelier/${fileName}`;
 
-    // Ensure you have a bucket named 'products' in Supabase Storage
     const { error: uploadError } = await supabase.storage
       .from('products')
       .upload(filePath, file);
@@ -103,6 +110,25 @@ const Admin = () => {
     }
   };
 
+  const initializeDefaultLayout = async () => {
+    if (!confirm('This will seed a beautiful initial layout. Proceed?')) return;
+    setIsInitializing(true);
+    const defaults = [
+      { id: 'hero-1', type: 'hero', title: 'The Golden Age of Childhood', subtitle: 'Where Heritage Meets Haute Couture', image_url: 'https://images.unsplash.com/photo-1519750157634-b6d493a0f77c?q=80&w=2000', button_text: 'Discover Collection', is_visible: true, display_order: 0 },
+      { id: 'featured-1', type: 'featured', title: 'Exquisite Creations', subtitle: 'Masterpieces crafted for your most precious moments.', is_visible: true, display_order: 1 },
+      { id: 'banner-1', type: 'banner', title: 'The Artisanal Atelier', subtitle: 'Each piece tells a story of a thousand stitches.', image_url: 'https://images.unsplash.com/photo-1490114538077-0a7f8cb49891?q=80&w=2000', button_text: 'Explore the Craft', is_visible: true, display_order: 2 }
+    ];
+    
+    const { error } = await supabase.from('homepage_config').upsert(defaults);
+    if (error) alert('Error initializing: ' + error.message + '\n\nCheck your SQL tab for RLS configuration instructions.');
+    else {
+      alert('Atelier Initialized!');
+      await refreshData();
+      setActiveModule('layout');
+    }
+    setIsInitializing(false);
+  };
+
   const handleSaveProduct = async () => {
     if (!newProduct.name || !newProduct.price) {
       alert('Masterpiece requires a name and value.');
@@ -119,8 +145,7 @@ const Admin = () => {
       colors: newProduct.colors,
       is_new: newProduct.isNew,
       is_featured: newProduct.isFeatured,
-      age_range: '1-6Y',
-      care_instructions: 'Professional Dry Clean Only'
+      age_range: '1-6Y'
     };
 
     const { error } = await supabase.from('products').insert([payload]);
@@ -149,7 +174,7 @@ const Admin = () => {
             <p className="text-[10px] tracking-[0.3em] text-gray-400 uppercase mb-12">Passcode: vermeni2025</p>
             <form onSubmit={handleLogin} className="space-y-6">
               <input type="password" placeholder="Passcode" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full p-4 border-b text-center text-sm focus:outline-none focus:border-gold" />
-              <button type="submit" className="w-full py-5 bg-gold text-white text-[11px] tracking-[0.4em] font-bold uppercase">Authenticate</button>
+              <button type="submit" className="w-full py-5 bg-gold text-white text-[11px] tracking-[0.4em] font-bold uppercase hover:bg-graphite transition-all">Authenticate</button>
             </form>
           </MotionDiv>
         </div>
@@ -174,8 +199,13 @@ const Admin = () => {
             </div>
             <div className="flex gap-4">
               {activeModule === 'layout' && (
-                <button onClick={() => updateHomepageConfig(localConfig).then(() => alert('Layout Published'))} className="px-10 py-5 bg-gold text-white text-[11px] tracking-[0.2em] font-bold hover:bg-graphite transition-all shadow-xl flex items-center gap-2">
-                  <Save size={16} /> PUBLISH LAYOUT
+                <button 
+                  disabled={isSaving}
+                  onClick={handlePublish} 
+                  className="px-10 py-5 bg-gold text-white text-[11px] tracking-[0.2em] font-bold hover:bg-graphite transition-all shadow-xl flex items-center gap-3 disabled:opacity-50"
+                >
+                  {isSaving ? <Loader2 size={16} className="animate-spin"/> : <Save size={16} />}
+                  <span>{isSaving ? 'PUBLISHING...' : 'PUBLISH LAYOUT'}</span>
                 </button>
               )}
               {activeModule === 'products' && (
@@ -190,10 +220,18 @@ const Admin = () => {
             {activeModule === 'layout' && (
               <MotionDiv key="layout" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
                 {localConfig.length === 0 ? (
-                  <div className="bg-white p-20 text-center border-2 border-dashed border-gray-100">
+                  <div className="bg-white p-20 text-center border-2 border-dashed border-gray-200">
                     <Database size={40} className="mx-auto text-gold mb-6" />
                     <h3 className="text-2xl font-serif mb-2">No Layout Found</h3>
-                    <p className="text-gray-400 text-xs mb-8">Your homepage needs content. Use the SQL tab to initialize tables.</p>
+                    <p className="text-gray-400 text-xs mb-8">Your homepage needs content. Use the SQL tab or initialize below.</p>
+                    <button 
+                      disabled={isInitializing}
+                      onClick={initializeDefaultLayout} 
+                      className="px-8 py-4 bg-gold text-white text-[10px] font-bold tracking-widest uppercase flex items-center gap-2 mx-auto disabled:opacity-50"
+                    >
+                      {isInitializing ? <Loader2 size={16} className="animate-spin"/> : <Zap size={16}/>}
+                      {isInitializing ? 'SEEDING...' : 'Initialize Standard Layout'}
+                    </button>
                   </div>
                 ) : (
                   localConfig.map((section) => (
@@ -201,7 +239,7 @@ const Admin = () => {
                       <div className="flex justify-between items-center mb-10">
                         <div className="flex items-center gap-4">
                           <div className="p-3 bg-gray-50 text-gold"><LayoutIcon size={20}/></div>
-                          <span className="font-bold tracking-widest uppercase text-xs">{section.type}</span>
+                          <span className="font-bold tracking-widest uppercase text-xs">{section.type} Section</span>
                         </div>
                         <button onClick={() => handleUpdate(section.id, 'isVisible', !section.isVisible)}>
                           {section.isVisible ? <Eye size={18} className="text-gold" /> : <EyeOff size={18} className="text-gray-300" />}
@@ -209,8 +247,8 @@ const Admin = () => {
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
                         <div className="space-y-6">
-                          <input type="text" value={section.title} onChange={e => handleUpdate(section.id, 'title', e.target.value)} className="w-full p-4 border font-serif text-lg outline-none" placeholder="Title" />
-                          <textarea value={section.subtitle} onChange={e => handleUpdate(section.id, 'subtitle', e.target.value)} className="w-full p-4 border h-32 text-sm outline-none" placeholder="Subtitle" />
+                          <input type="text" value={section.title} onChange={e => handleUpdate(section.id, 'title', e.target.value)} className="w-full p-4 border font-serif text-lg outline-none focus:border-gold" placeholder="Title" />
+                          <textarea value={section.subtitle} onChange={e => handleUpdate(section.id, 'subtitle', e.target.value)} className="w-full p-4 border h-32 text-sm outline-none focus:border-gold" placeholder="Subtitle" />
                         </div>
                         <div className="relative aspect-video bg-gray-50 flex items-center justify-center border group overflow-hidden">
                           {section.imageUrl ? <img src={section.imageUrl} className="absolute inset-0 w-full h-full object-cover" /> : <ImageIcon className="text-gray-200" size={40} />}
@@ -243,7 +281,7 @@ const Admin = () => {
                         <td className="py-6 text-[10px] tracking-widest uppercase text-gold">{p.category}</td>
                         <td className="py-6 text-sm">€{p.price}</td>
                         <td className="py-6 text-right">
-                          <button onClick={() => supabase.from('products').delete().eq('id', p.id).then(refreshData)} className="text-red-300 hover:text-red-500"><Trash2 size={16}/></button>
+                          <button onClick={() => { if(confirm('Remove this masterpiece?')) supabase.from('products').delete().eq('id', p.id).then(refreshData) }} className="text-red-300 hover:text-red-500"><Trash2 size={16}/></button>
                         </td>
                       </tr>
                     ))}
@@ -254,27 +292,21 @@ const Admin = () => {
 
             {activeModule === 'sql' && (
               <MotionDiv key="sql" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-graphite p-10 text-white rounded-sm">
-                <div className="flex items-center gap-3 mb-6">
-                  <Terminal size={20} className="text-gold" />
-                  <h3 className="text-xl font-serif">Supabase SQL Schema</h3>
+                <div className="flex justify-between items-center mb-6">
+                  <div className="flex items-center gap-3">
+                    <Terminal size={20} className="text-gold" />
+                    <h3 className="text-xl font-serif">Cloud Connectivity Fix</h3>
+                  </div>
                 </div>
-                <p className="text-xs text-gray-400 mb-8 leading-loose">If you see a blank page or errors, run this SQL in your Supabase SQL Editor to create the luxury database structure.</p>
-                <pre className="bg-black/50 p-6 rounded text-[10px] font-mono text-gold overflow-x-auto leading-relaxed">
-{`CREATE TABLE IF NOT EXISTS products (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  name TEXT NOT NULL,
-  price NUMERIC NOT NULL,
-  description TEXT,
-  category TEXT,
-  images TEXT[] DEFAULT '{}',
-  sizes TEXT[] DEFAULT '{}',
-  colors TEXT[] DEFAULT '{}',
-  age_range TEXT DEFAULT '1-6Y',
-  is_new BOOLEAN DEFAULT true,
-  is_featured BOOLEAN DEFAULT true,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
+                <p className="text-xs text-gray-400 mb-8 leading-loose">
+                  If your layout isn't saving, you likely need to <strong>Disable Row Level Security (RLS)</strong> in Supabase. 
+                  Run this code in your SQL Editor to allow the Admin panel to communicate with your database:
+                </p>
+                <pre className="bg-black/50 p-6 rounded text-[10px] font-mono text-gold overflow-x-auto leading-relaxed border border-gold/20 mb-12">
+{`ALTER TABLE products DISABLE ROW LEVEL SECURITY;
+ALTER TABLE homepage_config DISABLE ROW LEVEL SECURITY;
 
+-- If you get an error about tables not existing, run this first:
 CREATE TABLE IF NOT EXISTS homepage_config (
   id TEXT PRIMARY KEY,
   type TEXT NOT NULL,
@@ -286,6 +318,10 @@ CREATE TABLE IF NOT EXISTS homepage_config (
   display_order INTEGER NOT NULL
 );`}
                 </pre>
+                <div className="bg-gold/10 p-6 border border-gold/30 rounded">
+                  <h4 className="text-gold text-xs font-bold uppercase mb-2">Pro Tip</h4>
+                  <p className="text-[10px] text-gray-300">Also ensure you created a public storage bucket named "products" for image uploads.</p>
+                </div>
               </MotionDiv>
             )}
           </AnimatePresence>
@@ -301,21 +337,21 @@ CREATE TABLE IF NOT EXISTS homepage_config (
               <h2 className="text-4xl font-serif mb-12">New Collection Piece</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-16">
                 <div className="space-y-8">
-                  <input type="text" placeholder="Piece Name" value={newProduct.name} onChange={e => setNewProduct({...newProduct, name: e.target.value})} className="w-full p-4 border-b text-2xl font-serif outline-none" />
+                  <input type="text" placeholder="Piece Name" value={newProduct.name} onChange={e => setNewProduct({...newProduct, name: e.target.value})} className="w-full p-4 border-b text-2xl font-serif outline-none focus:border-gold" />
                   <div className="grid grid-cols-2 gap-6">
-                    <input type="number" placeholder="Price (€)" value={newProduct.price} onChange={e => setNewProduct({...newProduct, price: parseFloat(e.target.value)})} className="p-4 border outline-none" />
+                    <input type="number" placeholder="Price (€)" value={newProduct.price} onChange={e => setNewProduct({...newProduct, price: parseFloat(e.target.value)})} className="p-4 border outline-none focus:border-gold" />
                     <select value={newProduct.category} onChange={e => setNewProduct({...newProduct, category: e.target.value as any})} className="p-4 border uppercase text-[10px] tracking-widest font-bold">
                       <option>Dresses</option><option>Suits</option><option>Accessories</option><option>Outerwear</option><option>Shoes</option>
                     </select>
                   </div>
                   <div className="space-y-4">
                     <div className="flex gap-4">
-                      <input type="text" placeholder="Add Size (e.g. 4Y)" value={tempAttr.size} onChange={e => setTempAttr({...tempAttr, size: e.target.value})} className="flex-1 p-3 border text-xs" />
+                      <input type="text" placeholder="Add Size (e.g. 4Y)" value={tempAttr.size} onChange={e => setTempAttr({...tempAttr, size: e.target.value})} className="flex-1 p-3 border text-xs outline-none focus:border-gold" />
                       <button onClick={() => { if(tempAttr.size) setNewProduct({...newProduct, sizes: [...(newProduct.sizes || []), tempAttr.size]}); setTempAttr({...tempAttr, size: ''}) }} className="px-4 bg-gold text-white"><Plus size={16}/></button>
                     </div>
                     <div className="flex flex-wrap gap-2">{newProduct.sizes?.map(s => <span key={s} className="px-2 py-1 bg-pearl border text-[9px] font-bold">{s}</span>)}</div>
                   </div>
-                  <textarea placeholder="Description" value={newProduct.description} onChange={e => setNewProduct({...newProduct, description: e.target.value})} className="w-full p-4 border h-32 text-sm" />
+                  <textarea placeholder="Description" value={newProduct.description} onChange={e => setNewProduct({...newProduct, description: e.target.value})} className="w-full p-4 border h-32 text-sm outline-none focus:border-gold" />
                 </div>
                 <div className="space-y-8">
                   <div className="grid grid-cols-3 gap-4">
@@ -326,12 +362,12 @@ CREATE TABLE IF NOT EXISTS homepage_config (
                       </div>
                     ))}
                     <button onClick={() => fileInputRef.current?.click()} className="aspect-[3/4] border-2 border-dashed flex flex-col items-center justify-center text-gray-300 hover:text-gold transition-all">
-                      {isUploading ? <Loader2 className="animate-spin" /> : <Upload size={20} />}
+                      {isUploading ? <Loader2 className="animate-spin text-gold" /> : <Upload size={20} />}
                       <span className="text-[8px] tracking-widest mt-2 uppercase">Add Shot</span>
                     </button>
                     <input type="file" ref={fileInputRef} className="hidden" multiple accept="image/*" onChange={handleProductImageUpload} />
                   </div>
-                  <button onClick={handleSaveProduct} className="w-full py-6 bg-graphite text-white text-[11px] tracking-[0.4em] font-bold uppercase mt-12">Archive Piece</button>
+                  <button onClick={handleSaveProduct} className="w-full py-6 bg-graphite text-white text-[11px] tracking-[0.4em] font-bold uppercase mt-12 hover:bg-gold transition-all">Archive Piece</button>
                 </div>
               </div>
             </MotionDiv>
