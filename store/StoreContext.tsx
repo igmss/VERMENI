@@ -63,12 +63,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
       
       if (configData && configData.length > 0) {
-        setHomepageConfig(configData.map(c => ({
-          ...c,
+        // CRITICAL FIX: Explicitly map database is_visible to frontend isVisible
+        const mappedConfig = configData.map(c => ({
+          id: c.id,
+          type: c.type,
+          title: c.title,
+          subtitle: c.subtitle,
           imageUrl: c.image_url,
           buttonText: c.button_text,
+          isVisible: c.is_visible, // Fixed mapping
           order: c.display_order
-        })));
+        }));
+        console.log('Atelier Data Fetched:', mappedConfig);
+        setHomepageConfig(mappedConfig);
       } else {
         setHomepageConfig([]);
       }
@@ -124,7 +131,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }));
 
     try {
-      const { error } = await supabase.from('homepage_config').upsert(updates);
+      console.log('Publishing to cloud:', updates);
+      // Explicitly tell Supabase which column is the primary key for upsert
+      const { error } = await supabase
+        .from('homepage_config')
+        .upsert(updates, { onConflict: 'id' });
+        
       if (error) throw error;
       
       setHomepageConfig(config);
