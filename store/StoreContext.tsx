@@ -14,6 +14,7 @@ interface StoreContextType {
   updateHomepageConfig: (config: SectionConfig[]) => Promise<void>;
   user: UserProfile | null;
   isLoading: boolean;
+  error: string | null;
   login: () => void;
   logout: () => void;
   refreshData: () => Promise<void>;
@@ -28,11 +29,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [homepageConfig, setHomepageConfig] = useState<SectionConfig[]>([]);
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchData = async () => {
     setIsLoading(true);
+    setError(null);
     try {
-      // 1. Fetch Products from Supabase
+      // Fetch Products
       const { data: productsData, error: pError } = await supabase
         .from('products')
         .select('*')
@@ -40,7 +43,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       
       if (pError) throw pError;
 
-      // 2. Fetch Homepage Layout Config from Supabase
+      // Fetch Homepage Config
       const { data: configData, error: cError } = await supabase
         .from('homepage_config')
         .select('*')
@@ -48,12 +51,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       if (cError) throw cError;
 
-      // Map Supabase snake_case to Frontend camelCase
       if (productsData) {
         setProducts(productsData.map(p => ({
           ...p,
-          ageRange: p.age_range,
-          careInstructions: p.care_instructions,
+          ageRange: p.age_range || '1-6Y',
+          careInstructions: p.care_instructions || 'Professional clean only',
           isNew: p.is_new,
           isFeatured: p.is_featured,
           reviews: p.reviews || []
@@ -68,8 +70,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           order: c.display_order
         })));
       }
-    } catch (error) {
-      console.error('Atelier Fetch Error:', error);
+    } catch (err: any) {
+      console.error('Atelier Connection Error:', err);
+      setError(err.message || 'Failed to connect to the luxury database.');
     } finally {
       setIsLoading(false);
     }
@@ -107,10 +110,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const updateHomepageConfig = async (config: SectionConfig[]) => {
-    // Optimistic update
     setHomepageConfig(config);
-    
-    // Remote update
     const updates = config.map(c => ({
       id: c.id,
       type: c.type,
@@ -125,20 +125,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const { error } = await supabase.from('homepage_config').upsert(updates);
     if (error) {
-      console.error('Supabase Config Sync Error:', error);
-      alert('Failed to save to cloud. Reverting local state.');
-      fetchData(); // Rollback
+      alert('Cloud Sync Failed: ' + error.message);
+      fetchData();
     }
   };
 
   const login = () => {
-    // In a real app, this would use supabase.auth.signInWithPassword
     setUser({
       name: 'Julian Vermeni',
       email: 'julian@vermeni.luxury',
-      addresses: [
-        { id: '1', label: 'Primary Residence', street: '15 Place Vendôme', city: 'Paris', zip: '75001', country: 'France' }
-      ],
+      addresses: [{ id: '1', label: 'Primary Residence', street: '15 Place Vendôme', city: 'Paris', zip: '75001', country: 'France' }],
       orderHistory: []
     });
   };
@@ -148,7 +144,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   return (
     <StoreContext.Provider value={{
       products, cart, wishlist, addToCart, removeFromCart, toggleWishlist,
-      homepageConfig, updateHomepageConfig, user, login, logout, isLoading,
+      homepageConfig, updateHomepageConfig, user, login, logout, isLoading, error,
       refreshData: fetchData
     }}>
       {children}
